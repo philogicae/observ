@@ -1,4 +1,5 @@
 .python-version
 .env
-src/__pycache__
 src/data/base.db
+src/__pycache__
+src/watcher/__pycache__
