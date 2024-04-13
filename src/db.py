@@ -1,14 +1,15 @@
 import sqlite3
+from addict import Dict
 
 
 class DB:
     DATA = "src/data/"
     DB = DATA + "base.db"
     SCRIPTS = DATA + "scripts/"
-    READ = dict(
+    READ = Dict(
         get_messages="SELECT * FROM messages ORDER BY time DESC LIMIT 100",
     )
-    WRITE = dict(
+    WRITE = Dict(
         insert_message="INSERT INTO messages (chat_id, user_id, content, time) VALUES (?, ?, ?, datetime('now'))",
         update_message="UPDATE messages SET content = ?, time = datetime('now') WHERE id = ?",
     )

@@ -1,6 +1,7 @@
 from os import getenv
 from time import sleep, time as now
 from typing import Tuple
+from addict import Dict
 from db import DB
 from dotenv import load_dotenv
 from logging import basicConfig, getLogger, INFO
@@ -60,8 +61,8 @@ class SafeRequest:
 
 class History:
     def __init__(self, bot_user: types.User):
-        self.users = {bot_user.id: [bot_user.username, bot_user.first_name]}
-        self.chatrooms = dict()
+        self.users = Dict({bot_user.id: [bot_user.username, bot_user.first_name]})
+        self.chatrooms = Dict()
 
     def get_user(self, user_id) -> Tuple[str, str]:
         return self.users.get(user_id)
@@ -70,14 +71,14 @@ class History:
         self.users[user_id] = [user, name]
 
     def get_chat(self, chat_id):
-        return self.chatrooms.get(chat_id, dict())
+        return self.chatrooms.get(chat_id, Dict())
 
     def get_user_chat(self, chat_id, user_id):
         return self.get_chat(chat_id).get(user_id, [])
 
     def insert_msg(self, chat_id, user_id, message, user=None, name=None):
         if chat_id not in self.chatrooms:
-            self.chatrooms[chat_id] = dict()
+            self.chatrooms[chat_id] = Dict()
         if user_id not in self.chatrooms[chat_id]:
             self.chatrooms[chat_id][user_id] = []
         if user_id not in self.users and user and name:

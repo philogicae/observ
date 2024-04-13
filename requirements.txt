@@ -1,4 +1,5 @@
 python-dotenv
 rich
+addict
 pytelegrambotapi
 groq
