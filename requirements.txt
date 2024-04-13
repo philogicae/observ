@@ -3,3 +3,4 @@ rich
 addict
 pytelegrambotapi
 groq
+web3
