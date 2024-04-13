@@ -1,3 +1,4 @@
 .python-version
 .env
 src/__pycache__
+src/data/base.db

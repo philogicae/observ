@@ -1,5 +1,7 @@
 from os import getenv
 from time import sleep, time as now
+from typing import Tuple
+from db import DB
 from dotenv import load_dotenv
 from logging import basicConfig, getLogger, INFO
 from rich.logging import RichHandler
@@ -14,15 +16,6 @@ basicConfig(
     format="%(message)s", datefmt="[%d-%m %X]", level=INFO, handlers=[RichHandler()]
 )
 logger = getLogger("rich")
-sent = lambda chat_id, user, name, log: logger.info(
-    f"<-[{chat_id}](@{user}) {name}: {log}"
-)
-received = lambda chat_id, user, name, log: logger.info(
-    f"->[{chat_id}](@{user}) {name}: {log}"
-)
-happened = lambda chat_id, user, name, log: logger.info(
-    f"-x[{chat_id}](@{user}) {name}: {log}"
-)
 
 # Responses
 waiting = "Observ is thinking..."
@@ -67,45 +60,80 @@ class SafeRequest:
         return self.exec(self.bot.delete_message, chat_id, message_id)[0]
 
 
-# History
-chatrooms = dict()
+class History:
+    def __init__(self, bot_user: types.User):
+        self.users = {bot_user.id: [bot_user.username, bot_user.first_name]}
+        self.chatrooms = dict()
+
+    def get_user(self, user_id) -> Tuple[str, str]:
+        return self.users.get(user_id)
+
+    def insert_user(self, user_id, user, name):
+        self.users[user_id] = [user, name]
+
+    def get_chat(self, chat_id):
+        return self.chatrooms.get(chat_id, dict())
+
+    def get_user_chat(self, chat_id, user_id):
+        return self.get_chat(chat_id).get(user_id, [])
+
+    def insert_msg(self, chat_id, user_id, message, user=None, name=None):
+        if chat_id not in self.chatrooms:
+            self.chatrooms[chat_id] = dict()
+        if user_id not in self.chatrooms[chat_id]:
+            self.chatrooms[chat_id][user_id] = []
+        if user_id not in self.users and user and name:
+            self.insert_user(user_id, user, name)
+        self.chatrooms[chat_id][user_id].append(message)
 
 
-def get_history(chat_id):
-    return chatrooms.get(chat_id, dict())
+class SafeBot:
+    sent = lambda _, chat_id, user, name, log: logger.info(
+        f"<-[{chat_id}](@{user}) {name}: {log}"
+    )
+    received = lambda _, chat_id, user, name, log: logger.info(
+        f"->[{chat_id}](@{user}) {name}: {log}"
+    )
+    happened = lambda _, chat_id, user, name, log: logger.info(
+        f"-x[{chat_id}](@{user}) {name}: {log}"
+    )
+
+    def __init__(self):
+        self.bot = TeleBot(
+            TOKEN,
+            threaded=False,
+            disable_web_page_preview=True,
+            skip_pending=True,
+        )
+        self.safe = SafeRequest(self.bot)
+        self.me = self.bot.get_me()
+        self.history = History(self.me)
+        self.db = DB()
+
+        @self.bot.message_handler(content_types=["text"])
+        def handle_message(message: types.Message):
+            chat_id = message.chat.id
+            sender = message.from_user
+            text = message.text
+            self.received(chat_id, sender.username, sender.first_name, text)
+            self.db.commit("insert_message", chat_id, sender.id, text)
+            self.history.insert_msg(chat_id, sender.id, text, sender, sender.first_name)
+            resp = waiting
+            self.safe.send(resp, chat_id)
+            self.sent(chat_id, *self.history.get_user(self.me.id), resp)
+            self.db.commit("insert_message", chat_id, self.me.id, resp)
+            self.history.insert_msg(chat_id, self.me.id, resp)
+
+    def infinity_polling(self, **kwargs):
+        self.bot.infinity_polling(**kwargs)
+
+    def send(self, chat_id, sender_id, text, parse_mode=None):
+        self.history.insert_msg(chat_id, sender_id, text)
+        self.safe.send(waiting, chat_id)
+        self.sent(chat_id, *self.history.get_user(sender_id), waiting)
 
 
-def get_user_history(chat_id, user_id):
-    return get_history(chat_id).get(user_id, [])
-
-
-def insert_msg_history(chat_id, user_id, message):
-    if chat_id not in chatrooms:
-        chatrooms[chat_id] = dict()
-    if user_id not in chatrooms[chat_id]:
-        chatrooms[chat_id][user_id] = []
-    chatrooms[chat_id][user_id].append(message)
-
-
-bot = TeleBot(
-    TOKEN,
-    threaded=False,
-    disable_web_page_preview=True,
-    skip_pending=True,
-)
-safe = SafeRequest(bot)
-
-
-@bot.message_handler(content_types=["text"])
-def handle_message(message: types.Message):
-    chat_id = message.chat.id
-    sender = message.from_user
-    _input = message.text
-    received(chat_id, sender.username, sender.first_name, _input)
-    insert_msg_history(chat_id, sender.id, _input)
-    safe.send(waiting, chat_id)
-    sent(chat_id, sender.username, sender.first_name, waiting)
-
+bot = SafeBot()
 
 try:
     logger.info("Starting...")
