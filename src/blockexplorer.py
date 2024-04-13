@@ -29,5 +29,5 @@ class BlockExplorer:
         contractABI = json.loads(data['result'])
         return contractABI
     
-if __name__ == '__main__':
-    print(BlockExplorer().get_abi('0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9x'))
+# if __name__ == '__main__':
+#     print(BlockExplorer().get_abi('0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9x'))
