@@ -7,9 +7,7 @@ from logging import basicConfig, getLogger, INFO
 from rich.logging import RichHandler
 from telebot import TeleBot, types
 
-# .env
 load_dotenv()
-TOKEN = getenv("TELEGRAM_BOT_ID")
 
 # Logs
 basicConfig(
@@ -100,7 +98,7 @@ class SafeBot:
 
     def __init__(self):
         self.bot = TeleBot(
-            TOKEN,
+            token=getenv("TELEGRAM_BOT_ID"),
             threaded=False,
             disable_web_page_preview=True,
             skip_pending=True,
@@ -136,7 +134,7 @@ class SafeBot:
 bot = SafeBot()
 
 try:
-    logger.info("Starting...")
+    logger.info("Observ: Started.")
     bot.infinity_polling(skip_pending=True, timeout=300, long_polling_timeout=300)
 except KeyboardInterrupt:
     logger.info("Killed by KeyboardInterrupt")
