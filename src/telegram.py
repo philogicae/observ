@@ -101,6 +101,7 @@ def handle_message(message: types.Message):
     chat_id = message.chat.id
     sender = message.from_user
     _input = message.text
+    received(chat_id, sender.username, sender.first_name, _input)
     insert_msg_history(chat_id, sender.id, _input)
     safe.send(waiting, chat_id)
     sent(chat_id, sender.username, sender.first_name, waiting)
