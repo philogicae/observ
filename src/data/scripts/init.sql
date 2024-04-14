@@ -18,6 +18,7 @@ CREATE TABLE
         method TEXT,
         args TEXT,
         condition TEXT,
+        decimals INTEGER,
         active BOOLEAN,
         time TIMESTAMP
     )

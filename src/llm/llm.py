@@ -1,4 +1,7 @@
+from json import loads
 from os import getenv
+
+from addict import Dict
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -24,3 +27,12 @@ class LLM:
             ],
         )
         return chat_completion.choices[0].message.content
+
+    def call_for_json(self, system_prompt, user_prompt):
+        formatted = None
+        while not formatted:
+            try:
+                formatted = Dict(loads(self.call(system_prompt, user_prompt)))
+            except:
+                pass
+        return formatted
