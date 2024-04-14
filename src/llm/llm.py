@@ -30,7 +30,7 @@ class LLM:
 
     def call_for_json(self, system_prompt, user_prompt):
         formatted, retry = None, 0
-        while not formatted and retry < 4:
+        while not formatted and retry < 3:
             retry += 1
             try:
                 formatted = Dict(loads(self.call(system_prompt, user_prompt)))

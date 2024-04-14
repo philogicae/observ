@@ -19,6 +19,7 @@ class EventListener:
         data = Dict(
             {
                 r[0]: Dict(
+                    request_id=r[0],
                     chat_id=r[1],
                     user_id=r[2],
                     event_name=r[6],

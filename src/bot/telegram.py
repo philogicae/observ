@@ -256,6 +256,12 @@ class SafeBot:
         self.history.insert_msg(chat_id, receiver.id, text)
         return msg
 
+    def notify(self, chat_id, receiver_id, text):
+        self.safe.send(text, chat_id)
+        sent(chat_id, *self.history.get_user(self.me.id), text)
+        self.db.commit("insert_message", chat_id, self.me.id, text)
+        self.history.insert_msg(chat_id, receiver_id, text)
+
 
 bot = SafeBot()
 
