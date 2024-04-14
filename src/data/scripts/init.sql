@@ -12,8 +12,11 @@ CREATE TABLE
         id INTEGER PRIMARY KEY,
         chat_id INTEGER,
         user_id INTEGER,
-        data TEXT,
-        type TEXT,
+        watch_type TEXT,
+        addr TEXT,
+        abi TEXT,
+        method TEXT,
+        args TEXT,
         condition TEXT,
         active BOOLEAN,
         time TIMESTAMP

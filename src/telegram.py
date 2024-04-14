@@ -2,7 +2,7 @@ from os import getenv
 from time import sleep, time as now
 from typing import Tuple
 from addict import Dict
-from db import DB
+from data.db import DB
 from dotenv import load_dotenv
 from logging import basicConfig, getLogger, INFO
 from rich.logging import RichHandler
@@ -132,12 +132,13 @@ class SafeBot:
         self.sent(chat_id, *self.history.get_user(sender_id), waiting)
 
 
-bot = SafeBot()
+if __name__ == "__main__":
+    bot = SafeBot()
 
-try:
-    logger.info("Observ: Started.")
-    bot.infinity_polling(skip_pending=True, timeout=300, long_polling_timeout=300)
-except KeyboardInterrupt:
-    logger.info("Killed by KeyboardInterrupt")
-except Exception as e:
-    logger.error(f"Error: {e}")
+    try:
+        logger.info("Observ: Started.")
+        bot.infinity_polling(skip_pending=True, timeout=300, long_polling_timeout=300)
+    except KeyboardInterrupt:
+        logger.info("Killed by KeyboardInterrupt")
+    except Exception as e:
+        logger.error(f"Error: {e}")

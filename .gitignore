@@ -2,4 +2,4 @@
 .env
 src/data/base.db
 src/__pycache__
-src/watcher/__pycache__
+src/**/__pycache__
