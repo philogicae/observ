@@ -15,7 +15,7 @@ class DB:
     WRITE = Dict(
         insert_message="INSERT INTO messages (chat_id, user_id, content, time) VALUES (?, ?, ?, datetime('now'))",
         update_message="UPDATE messages SET content = ?, time = datetime('now') WHERE id = ?",
-        insert_request="INSERT INTO requests (chat_id, user_id, watch_type, addr, abi, method, args, condition, decimals, active, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))",
+        insert_request="INSERT INTO requests (chat_id, user_id, watch_type, addr, abi, method, args, condition, decimals, intention, active, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))",
         disable_request="UPDATE requests SET active = 0 WHERE id = ?",
         enable_request="UPDATE requests SET active = 1 WHERE id = ?",
     )

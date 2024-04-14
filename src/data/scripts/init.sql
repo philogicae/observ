@@ -19,6 +19,7 @@ CREATE TABLE
         args TEXT,
         condition TEXT,
         decimals INTEGER,
+        intention TEXT,
         active BOOLEAN,
         time TIMESTAMP
     )

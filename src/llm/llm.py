@@ -29,8 +29,9 @@ class LLM:
         return chat_completion.choices[0].message.content
 
     def call_for_json(self, system_prompt, user_prompt):
-        formatted = None
-        while not formatted:
+        formatted, retry = None, 0
+        while not formatted and retry < 4:
+            retry += 1
             try:
                 formatted = Dict(loads(self.call(system_prompt, user_prompt)))
             except:

@@ -1,3 +1,4 @@
+from addict import Dict
 from web3 import Web3
 from .config import RPC
 import asyncio
@@ -6,7 +7,7 @@ from rich import print
 
 
 class EventListener:
-    delay = 3
+    delay = 2
 
     def __init__(self, db, handler):
         self.w3 = Web3(Web3.WebsocketProvider(RPC.arbitrum.events.wss))
@@ -15,6 +16,19 @@ class EventListener:
 
     def get_filter(self, block_id, watched=None):
         results = self.db.fetch("get_event_requests")
+        data = Dict(
+            {
+                r[0]: Dict(
+                    chat_id=r[1],
+                    user_id=r[2],
+                    event_name=r[6],
+                    condition=r[8],
+                    decimals=r[9],
+                    intention=r[10],
+                )
+                for r in results
+            }
+        )
         requests = [[r[0], r[4], r[5], r[6]] for r in results]
         zipped = list(zip(*requests))
         new_watched = set(map(lambda x: x[0], requests))
@@ -38,36 +52,34 @@ class EventListener:
             block_filter = self.w3.eth.filter(
                 dict(address=list(set(addrs)), fromBlock=block_id)
             )
-            return new_watched, addr_mapping, block_filter
-        return None, None, None
+            return new_watched, addr_mapping, block_filter, data
+        return None, None, None, None
 
     def listen(self):
         async def block_loop():
             block_id = self.w3.eth.get_block_number()
-            watched, addr_mapping, block_filter = self.get_filter(block_id)
+            watched, addr_mapping, block_filter, data = self.get_filter(block_id)
             while True:
                 if watched:
                     logs = block_filter.get_new_entries()
-                    found = False
+                    to_check = []
                     if len(logs) > 0:
                         for log in logs:
-                            item = addr_mapping[log.address]
-                            for request_id, event in item:
+                            for request_id, event in addr_mapping[log.address]:
                                 try:
-                                    asyncio.create_task(
-                                        self.handler(
-                                            request_id, event().process_log(log)
-                                        )
+                                    to_check.append(
+                                        [
+                                            request_id,
+                                            data[request_id],
+                                            event().process_log(log),
+                                        ]
                                     )
-                                    block_id = log.blockNumber
-                                    found = True
-                                except Exception as e:
+                                except:
                                     pass
-                                    """ print(
-                                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                        + f" - Error: {e}"
-                                    ) """
-                    if not found:
+                    if to_check:
+                        block_id = logs[-1].blockNumber
+                        self.handler(to_check)
+                    else:
                         block_id = self.w3.eth.get_block_number()
                         print(
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -79,14 +91,15 @@ class EventListener:
                         + f" - Nothing to watch"
                     )
                 await asyncio.sleep(self.delay)
-                new_watched, new_addr_mapping, new_block_filter = self.get_filter(
-                    block_id, watched
+                new_watched, new_addr_mapping, new_block_filter, new_data = (
+                    self.get_filter(block_id, watched)
                 )
                 if new_watched:
-                    watched, addr_mapping, block_filter = (
+                    watched, addr_mapping, block_filter, data = (
                         new_watched,
                         new_addr_mapping,
                         new_block_filter,
+                        new_data,
                     )
 
         async def task():

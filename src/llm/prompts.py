@@ -13,3 +13,10 @@ class PROMPTS:
     method = """In the context of blockchain on-chain activity analysis, only given an user intention and an contract ABI, identify the specific event name to listen. Never comment or explain, ONLY respond with a valid formatted JSON including the event name.:
 Example:
 {"event": "Transfer"}"""
+    condition = """In the context of blockchain on-chain activity analysis, only given an user intention, a condition (it can be none) and some eth logs, ONLY return relevant events if there is some. Never comment or explain, ONLY respond with a valid formatted JSON:
+Example of no relevant event:
+{"found": []}
+Example of few relevant events:
+{"found": [{"from": "0xC6962004f452bE9203591991D15f6b388e09E8D0", "to":
+"0x75010B38696E3045072Ea8bEbAbEE8E4b8A3706C", "value": 2684610564}, {"from": "0xf7e96217347667064DEE8f20DB747B1C7df45DDe", "to":
+"0x01A3c8E513B758EBB011F7AFaf6C37616c9C24d9", "value": 2979000}]}"""

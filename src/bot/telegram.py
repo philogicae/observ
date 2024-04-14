@@ -214,6 +214,7 @@ class SafeBot:
                         "",  # buffer.args
                         buffer.condition,
                         buffer.decimals,
+                        buffer.intention,
                     )
                 else:
                     happened(chat_id, user, name, "ABI not found")
