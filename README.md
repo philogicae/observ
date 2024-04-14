@@ -2,8 +2,9 @@
 
 Observ is a Telegram AI virtual assistant designed to help you easily set up notifications on EVM blockchains. Our solution provides an easy, personalized, and modular web3 notification setup, powered by AI.
 
-## Example of use-case:
+## Example of use-cases:
 
+Custom alerts for:
 - USDC transfer higher than 1M USD.
 - Mint of a given NFT.
 - Monitor your health factor on Aave.
@@ -26,13 +27,13 @@ Observ is a Telegram AI virtual assistant designed to help you easily set up not
    - If the request condition is met, the notifier bot generates a message to notify the user in their Telegram chatroom.
 9. On our current implementation, a user can schedule multiple alerts, and the 'watcher' bot will pick them up. Our bots are deployed using Aleph IM decentralized cloud (VMs).
 
+## Architecture schema:
+
+![Alt text](/assets/observ-schema.png "Optional title")
+
 ## To expand our capabilities:
 
 - Support other EVM blockchains.
 - Events could trigger actions: generate transaction data -> create a URL link that redirects to a page allowing you to sign and send the transaction.
 - Scraping the contract addresses instead of asking for them.
 - Scalability on Indexing and Monitoring modules.
-  
-## Architecture schema:
-
-![Alt text](/assets/observ-schema.png "Optional title")
