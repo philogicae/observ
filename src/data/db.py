@@ -20,7 +20,7 @@ class DB:
         enable_request="UPDATE requests SET active = 1 WHERE id = ?",
     )
 
-    def __init__(self):
+    def reset(self):
         self.run_script("reset")
         self.run_script("init")
 

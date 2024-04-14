@@ -5,6 +5,7 @@ from addict import Dict
 from data.db import DB
 from dotenv import load_dotenv
 from logging import basicConfig, getLogger, INFO
+from llm.llm import LLM
 from rich.logging import RichHandler
 from telebot import TeleBot, types
 
@@ -17,6 +18,7 @@ basicConfig(
 logger = getLogger("rich")
 
 # Responses
+starting = "Welcome!\nTo get notifications about Arbitrum on-chain activity, just send me a contract address and describe what you want to monitooor.\nI will check constantly and notify you!"
 waiting = "Observ is thinking..."
 checking = "Observ is checking..."
 
@@ -44,13 +46,13 @@ class SafeRequest:
             else:
                 sleep(self.delay)
 
-    def send(self, text, chat_id, parse_mode=None):
+    def send(self, text, chat_id, parse_mode=None) -> types.Message:
         return self.exec(self.bot.send_message, chat_id, text, parse_mode=parse_mode)[0]
 
-    def reply(self, message, text, parse_mode=None):
+    def reply(self, message, text, parse_mode=None) -> types.Message:
         return self.exec(self.bot.reply_to, message, text, parse_mode=parse_mode)[0]
 
-    def edit(self, text, chat_id, message_id, parse_mode=None):
+    def edit(self, text, chat_id, message_id, parse_mode=None) -> types.Message:
         return self.exec(
             self.bot.edit_message_text, text, chat_id, message_id, parse_mode=parse_mode
         )[0]
@@ -108,37 +110,57 @@ class SafeBot:
         self.me = self.bot.get_me()
         self.history = History(self.me)
         self.db = DB()
+        self.llm = LLM()
+
+        @self.bot.message_handler(commands=["start"])
+        def handle_start(message: types.Message):
+            chat_id = message.chat.id
+            sender = message.from_user
+            text = message.text
+            self.msg_in(chat_id, sender, text)
+            self.msg_out(chat_id, starting)
 
         @self.bot.message_handler(content_types=["text"])
         def handle_message(message: types.Message):
             chat_id = message.chat.id
             sender = message.from_user
             text = message.text
-            self.received(chat_id, sender.username, sender.first_name, text)
-            self.db.commit("insert_message", chat_id, sender.id, text)
-            self.history.insert_msg(chat_id, sender.id, text, sender, sender.first_name)
-            resp = waiting
-            self.safe.send(resp, chat_id)
-            self.sent(chat_id, *self.history.get_user(self.me.id), resp)
-            self.db.commit("insert_message", chat_id, self.me.id, resp)
-            self.history.insert_msg(chat_id, self.me.id, resp)
+            self.msg_in(chat_id, sender, text)
+            msg = self.msg_out(chat_id, waiting)
+            resp = self.llm.call("I am an AI, and I am ready to respond.", text)
+            self.msg_out(chat_id, resp, msg.id)
+
+    def start(self):
+        try:
+            logger.info("Observ: Started.")
+            self.bot.infinity_polling(
+                skip_pending=True, timeout=300, long_polling_timeout=300
+            )
+        except KeyboardInterrupt:
+            logger.info("Killed by KeyboardInterrupt")
+        except Exception as e:
+            logger.error(f"Error: {e}")
 
     def infinity_polling(self, **kwargs):
         self.bot.infinity_polling(**kwargs)
 
-    def send(self, chat_id, sender_id, text, parse_mode=None):
-        self.history.insert_msg(chat_id, sender_id, text)
-        self.safe.send(waiting, chat_id)
-        self.sent(chat_id, *self.history.get_user(sender_id), waiting)
+    def msg_in(self, chat_id, sender, text):
+        self.received(chat_id, sender.username, sender.first_name, text)
+        self.db.commit("insert_message", chat_id, sender.id, text)
+        self.history.insert_msg(chat_id, sender.id, text, sender, sender.first_name)
 
+    def msg_out(self, chat_id, text, msg_id=None):
+        if not msg_id:
+            msg = self.safe.send(text, chat_id)
+        else:
+            msg = self.safe.edit(text, chat_id, msg_id)
+        self.sent(chat_id, *self.history.get_user(self.me.id), text)
+        self.db.commit("insert_message", chat_id, self.me.id, text)
+        self.history.insert_msg(chat_id, self.me.id, text)
+        return msg
+
+
+bot = SafeBot()
 
 if __name__ == "__main__":
-    bot = SafeBot()
-
-    try:
-        logger.info("Observ: Started.")
-        bot.infinity_polling(skip_pending=True, timeout=300, long_polling_timeout=300)
-    except KeyboardInterrupt:
-        logger.info("Killed by KeyboardInterrupt")
-    except Exception as e:
-        logger.error(f"Error: {e}")
+    bot.start()
