@@ -1,4 +1,5 @@
 from addict import Dict
+
 from llm import LLM, Prompts
 
 
@@ -36,13 +37,25 @@ class Notifier:
                 for i in results.found:
                     try:
                         data = to_process[i]
-                        base = f"⚠️ Alert-{data.request_id}: {data.intention}\n- Condition: {data.condition}{'\n- Decimals: '+str(data.decimals) if data.decimals else ''}\n- Event: {data.event_name}\n- Tx: {data.tx_hash.hex()}\nLogs:"
+                        condition = (
+                            ("\n- Condition: " + str(data.condition))
+                            if data.decimals
+                            else ""
+                        )
+                        decimals = (
+                            ("\n- Decimals: " + str(data.decimals))
+                            if data.decimals
+                            else ""
+                        )
+                        base = f"⚠️ Alert-{data.request_id}: {data.intention}{condition}{decimals}\n- Event: {data.event_name}\n- Tx: {data.tx_hash.hex()}\nLogs:"
                         log = f"\n{data.event_logs}"
                         if base not in to_notify:
                             to_notify[base] = [i, log]
                         else:
                             to_notify[base][1] += log
                     except Exception as e:
-                        self.bot.log.error(str(e))
+                        from bot.telegram import Log
+
+                        Log.error(str(e))
                 for base, (i, log) in to_notify.items():
-                    self.bot.notify(*refs[i], base+log)
+                    self.bot.notify(*refs[i], base + log)

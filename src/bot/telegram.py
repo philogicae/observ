@@ -16,14 +16,16 @@ load_dotenv()
 
 
 # Responses
-starting = "Welcome!\nTo get notifications about Arbitrum on-chain activity, just send me a contract address and describe what you want to monitooor.\nI will check constantly and notify you!\nStart by sending:\n#tellmewhen ..."
-waiting = "Observ is thinking..."
-checking = "Observ is checking..."
-proxying = "Observ is checking the proxied contract..."
-missing = "Please provide a contract address by sending:\n#address 0x..."
-done = "Successfully added to your list of monitored events!"
-on = lambda x: f"Alert-{x}: on."
-off = lambda x: f"Alert-{x}: off."
+starting = "🔥 Welcome! 🔥\nTo get notifications about Arbitrum on-chain activity, just send me a contract address and describe what you want to monitooor.\nI will check constantly and notify you!\nStart by sending an intention and a contract address:\n#tellmewhen ... 0x..."
+notice = "❓ How to use Observ ❓\nTo add a new alert:\n#tellmewhen ... 0x...\nTo enable/disable an alert-x:\n#on x\n#off x"
+reset = "♻️ All alerts deleted ♻️"
+waiting = "🛠️ Observ is thinking..."
+checking = "🛠️ Observ is checking..."
+proxying = "🛠️ Observ is checking the proxied contract..."
+missing = "⌛ Please provide a contract address by sending:\n#address 0x..."
+added = lambda x: f"✅ Successfully added Alert-{x} ✅"
+on = lambda x: f"🟢 Alert-{x}: on 🟢"
+off = lambda x: f"🔴 Alert-{x}: off 🔴"
 
 
 class SafeRequest:
@@ -98,6 +100,14 @@ class SafeBot:
             disable_web_page_preview=True,
             skip_pending=True,
         )
+        self.bot.set_my_commands(
+            commands=[
+                types.BotCommand("start", "🤖 Start Observ"),
+                types.BotCommand("help", "❓ How to use Observ"),
+                types.BotCommand("list", f"💾 List alerts"),
+                types.BotCommand("reset", "♻️ Reset alerts"),
+            ]
+        )
         self.safe = SafeRequest(self.bot)
         self.db = DB()
         self.history = History(self.db)
@@ -109,6 +119,42 @@ class SafeBot:
             chat_id, sender, text = self.context(message)
             self.msg_in(chat_id, sender, text)
             self.msg_out(chat_id, sender, starting)
+
+        @self.bot.message_handler(commands=["help"])
+        def handle_help(message: types.Message):
+            chat_id, sender, text = self.context(message)
+            self.msg_in(chat_id, sender, text)
+            self.msg_out(chat_id, sender, notice)
+
+        @self.bot.message_handler(commands=["list"])
+        def handle_list(message: types.Message):
+            chat_id, sender, text = self.context(message)
+            self.msg_in(chat_id, sender, text)
+            actives = self.db.fetch(
+                "get_active_requests_by_user_chat", chat_id, sender.id, 100
+            )
+            inactives = self.db.fetch(
+                "get_inactive_requests_by_user_chat", chat_id, sender.id, 100
+            )
+            resp = "💾 My Alerts 💾"
+            if not actives and not inactives:
+                resp += "\nNo alerts"
+            if actives:
+                resp += f"\nActive:"
+                for active in actives:
+                    resp += f"\n- Alert-{active[0]}: {active[10]}"
+            if inactives:
+                resp += f"\nInactive:"
+                for inactive in inactives:
+                    resp += f"\n- Alert-{inactive[0]}: {inactive[10]}"
+            self.msg_out(chat_id, sender, resp)
+
+        @self.bot.message_handler(commands=["reset"])
+        def handle_reset(message: types.Message):
+            chat_id, sender, text = self.context(message)
+            self.msg_in(chat_id, sender, text)
+            self.db.commit("delete_all_user_requests", chat_id, sender.id)
+            self.msg_out(chat_id, sender, reset)
 
         @self.bot.message_handler(content_types=["text"])
         def handle_message(message: types.Message):
@@ -194,7 +240,7 @@ class SafeBot:
                         f"Intention: {buffer.intention}\nABI: {buffer.abi}",
                     ).event
                     Log.info(chat_id, user, name, "Got event name: " + buffer.method)
-                    self.db.commit(
+                    new_id = self.db.commit(
                         "insert_request",
                         chat_id,
                         sender.id,
@@ -207,11 +253,14 @@ class SafeBot:
                         buffer.decimals,
                         buffer.intention,
                     )
+                    condition = (
+                        ("\nCondition: " + buffer.condition) if buffer.condition else ""
+                    )
                     self.msg_out(
                         chat_id,
                         sender,
-                        done
-                        + f"\nIntention: {buffer.intention}\nContract: {buffer.address}\nEvent: {buffer.method}\nCondition: {buffer.condition if buffer.condition else 'None'}",
+                        added(new_id)
+                        + f"\nIntention: {buffer.intention}\nContract: {buffer.address}\nEvent: {buffer.method}{condition}",
                         msg.id,
                     )
                     del self.history.buffer[f"{chat_id}_{sender.id}"]

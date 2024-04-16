@@ -18,7 +18,7 @@ class EventListener:
         self.handler = bot.Notifier().handler
 
     def get_filter(self, block_id, watched=None):
-        results = self.db.fetch("get_event_requests", 100)
+        results = self.db.fetch("get_active_event_requests", 100)
         data = Dict(
             {
                 r[0]: Dict(
