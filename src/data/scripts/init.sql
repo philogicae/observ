@@ -1,9 +1,19 @@
 CREATE TABLE
+    users (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        username TEXT,
+        first_name TEXT,
+        time TIMESTAMP
+    );
+
+CREATE TABLE
     messages (
         id INTEGER PRIMARY KEY,
         chat_id INTEGER,
         user_id INTEGER,
         content TEXT,
+        agent TEXT,
         time TIMESTAMP
     );
 

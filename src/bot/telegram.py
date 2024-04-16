@@ -1,35 +1,19 @@
 from os import getenv
-from time import sleep, time as now
-from typing import Tuple
+from time import sleep, time
 
-from web3 import Web3
 from addict import Dict
-from api import BlockExplorer
-from data.db import DB
 from dotenv import load_dotenv
-from logging import basicConfig, getLogger, INFO
-from llm import LLM, PROMPTS
-from rich.logging import RichHandler
 from telebot import TeleBot, types
+from web3 import Web3
+
+from api import BlockExplorer
+from bot import Log
+from data import DB
+from llm import LLM, Prompts
 from watcher import RPC
 
 load_dotenv()
 
-# Logs
-basicConfig(
-    format="%(message)s", datefmt="[%d-%m %X]", level=INFO, handlers=[RichHandler()]
-)
-logger = getLogger("rich")
-shorten = lambda text: text[0:100] + ("..." if len(text) > 100 else "")
-sent = lambda chat_id, user, name, log: logger.info(
-    f"<-[{chat_id}](@{user}) {name}: {shorten(log)}"
-)
-received = lambda chat_id, user, name, log: logger.info(
-    f"->[{chat_id}](@{user}) {name}: {shorten(log)}"
-)
-happened = lambda chat_id, user, name, log: logger.info(
-    f"-x[{chat_id}](@{user}) {name}: {shorten(log)}"
-)
 
 # Responses
 starting = "Welcome!\nTo get notifications about Arbitrum on-chain activity, just send me a contract address and describe what you want to monitooor.\nI will check constantly and notify you!\nStart by sending:\n#tellmewhen ..."
@@ -38,20 +22,21 @@ checking = "Observ is checking..."
 proxying = "Observ is checking the proxied contract..."
 missing = "Please provide a contract address by sending:\n#address 0x..."
 done = "Successfully added to your list of monitored events!"
+on = lambda x: f"Alert-{x}: on."
+off = lambda x: f"Alert-{x}: off."
 
 
 class SafeRequest:
     def __init__(self, bot: TeleBot):
         self.bot = bot
         self.delay = 0.2
-        self.last = 0
-        self.logger = logger
+        self.last = time()
 
     def done(self):
-        self.last = now()
+        self.last = time()
 
     def is_free(self):
-        return self.last + self.delay < now()
+        return self.last + self.delay < time()
 
     def exec(self, method, *args, **kwargs):
         while True:
@@ -79,32 +64,30 @@ class SafeRequest:
 
 
 class History:
-    def __init__(self, bot_user: types.User):
-        self.users = Dict({bot_user.id: [bot_user.username, bot_user.first_name]})
-        self.chatrooms = Dict()
+    def __init__(self, db):
+        self.db = db
         self.buffer = Dict()
 
-    def get_user(self, user_id) -> Tuple[str, str]:
-        return self.users.get(user_id)
+    def get_user(self, user_id):
+        return self.db.fetch("get_user", user_id)
 
     def insert_user(self, user_id, user, name):
-        self.users[user_id] = [user, name]
+        self.db.commit("insert_user", user_id, user, name)
 
     def get_chat(self, chat_id):
-        return self.chatrooms.get(chat_id, Dict())
+        return self.db.fetch("get_chat", chat_id, 10)
 
     def get_user_chat(self, chat_id, user_id):
-        return self.get_chat(chat_id).get(user_id, [])
+        return self.db.fetch("get_user_chat", chat_id, user_id, 10)
 
-    def insert_msg(self, chat_id, user_id, message, user=None, name=None):
-        if chat_id not in self.chatrooms:
-            self.chatrooms[chat_id] = Dict()
-        if user_id not in self.chatrooms[chat_id]:
-            self.chatrooms[chat_id][user_id] = []
-        if user_id not in self.users and user and name:
-            self.insert_user(user_id, user, name)
-        agent = "user: " if user else "assistant: "
-        self.chatrooms[chat_id][user_id].append(agent + message)
+    def insert_msg(self, chat_id, user_id, message, bot=False):
+        self.db.commit(
+            "insert_message",
+            chat_id,
+            user_id,
+            message,
+            "user" if not bot else "assistant",
+        )
 
 
 class SafeBot:
@@ -116,60 +99,68 @@ class SafeBot:
             skip_pending=True,
         )
         self.safe = SafeRequest(self.bot)
-        self.me = self.bot.get_me()
-        self.history = History(self.me)
         self.db = DB()
+        self.history = History(self.db)
         self.llm = LLM()
+        self.myself = [self.bot.get_me().username, self.bot.get_me().first_name]
 
         @self.bot.message_handler(commands=["start"])
         def handle_start(message: types.Message):
-            chat_id = message.chat.id
-            sender = message.from_user
-            text = message.text
+            chat_id, sender, text = self.context(message)
             self.msg_in(chat_id, sender, text)
             self.msg_out(chat_id, sender, starting)
 
         @self.bot.message_handler(content_types=["text"])
         def handle_message(message: types.Message):
-            chat_id = message.chat.id
-            sender = message.from_user
-            text = message.text
+            chat_id, sender, text = self.context(message)
             self.msg_in(chat_id, sender, text)
             msg = self.msg_out(chat_id, sender, waiting)
             if not text.startswith("#"):
-                resp = self.llm.call(PROMPTS.default, text)
+                resp = self.llm.call(Prompts.default, text)
             else:
-                user, name = self.history.get_user(self.me.id)
+                user, name = self.myself
                 if text.startswith("#tellmewhen ") and len(text) > 12:
-                    parsed = self.llm.call_for_json(PROMPTS.analyse, text)
+                    parsed = self.llm.call_for_json(Prompts.analyse, text)
                     if parsed.address:
                         try:
                             parsed.address = Web3.to_checksum_address(parsed.address)
                         except Exception as e:
-                            happened(chat_id, user, name, str(e))
+                            Log.info(chat_id, user, name, str(e))
                             parsed.address = None
                     if not parsed.address:
-                        happened(
+                        Log.info(
                             chat_id, user, name, "Missing or invalid contract address"
                         )
                         resp = missing
                     else:
-                        happened(chat_id, user, name, str(parsed))
+                        Log.info(chat_id, user, name, str(parsed))
                         resp = checking
-                        self.history.buffer[chat_id] = parsed
-                elif text.startswith("#address ") and len(text) > 9:
-                    self.history.buffer[chat_id].address = Web3.to_checksum_address(
-                        text[9:]
+                        self.history.buffer[f"{chat_id}_{sender.id}"] = parsed
+                elif (
+                    text.startswith("#address ")
+                    and len(text) > 9
+                    and self.history.buffer[f"{chat_id}_{sender.id}"]
+                ):
+                    self.history.buffer[f"{chat_id}_{sender.id}"].address = (
+                        Web3.to_checksum_address(text[9:])
                     )
-                    happened(chat_id, user, name, "Added contract address")
+                    Log.info(chat_id, user, name, "Added contract address")
                     resp = "Thank you! " + checking
+                elif text.startswith("#on ") and len(text) > 4:
+                    alert = int(text[4:])
+                    self.db.commit("enable_request", alert)
+                    resp = on(alert)
+                elif text.startswith("#off ") and len(text) > 5:
+                    alert = int(text[5:])
+                    self.db.commit("disable_request", alert)
+                    resp = off(alert)
             self.msg_out(chat_id, sender, resp, msg.id)
             if resp == checking:
-                buffer = self.history.buffer[chat_id]
+                buffer = self.history.buffer[f"{chat_id}_{sender.id}"]
                 abi = BlockExplorer.get_abi(buffer.address)
                 if abi:
                     if '"name":"implementation"' in abi:
-                        happened(chat_id, user, name, "Got ABI by it's a proxy")
+                        Log.info(chat_id, user, name, "Got ABI by it's a proxy")
                         self.msg_out(chat_id, sender, proxying, msg.id)
                         impl_address = (
                             Web3(Web3.HTTPProvider(RPC.arbitrum.calls.https))
@@ -184,7 +175,7 @@ class SafeBot:
                             Web3.to_checksum_address(impl_address)
                         )
                     buffer.abi = abi
-                    happened(chat_id, user, name, "Got ABI")
+                    Log.info(chat_id, user, name, "Got ABI")
                     if buffer.decimals:
                         buffer.decimals = (
                             Web3(Web3.HTTPProvider(RPC.arbitrum.calls.https))
@@ -195,14 +186,14 @@ class SafeBot:
                             .functions.decimals()
                             .call()
                         )
-                        happened(chat_id, user, name, "Got decimals")
+                        Log.info(chat_id, user, name, "Got decimals")
                     else:
                         buffer.decimals = 0
                     buffer.method = self.llm.call_for_json(
-                        PROMPTS.method,
+                        Prompts.method,
                         f"Intention: {buffer.intention}\nABI: {buffer.abi}",
                     ).event
-                    happened(chat_id, user, name, "Got event name: " + buffer.method)
+                    Log.info(chat_id, user, name, "Got event name: " + buffer.method)
                     self.db.commit(
                         "insert_request",
                         chat_id,
@@ -216,34 +207,36 @@ class SafeBot:
                         buffer.decimals,
                         buffer.intention,
                     )
+                    self.msg_out(
+                        chat_id,
+                        sender,
+                        done
+                        + f"\nIntention: {buffer.intention}\nContract: {buffer.address}\nEvent: {buffer.method}\nCondition: {buffer.condition if buffer.condition else 'None'}",
+                        msg.id,
+                    )
+                    del self.history.buffer[f"{chat_id}_{sender.id}"]
                 else:
-                    happened(chat_id, user, name, "ABI not found")
-                self.msg_out(
-                    chat_id,
-                    sender,
-                    done
-                    + f"\nIntention: {buffer.intention}\nContract: {buffer.address}\nEvent: {buffer.method}\nCondition: {buffer.condition if buffer.condition else 'None'}",
-                    msg.id,
-                )
+                    Log.info(chat_id, user, name, "ABI not found")
+
+    def context(self, message: types.Message):
+        return message.chat.id, message.from_user, message.text
 
     def start(self):
         try:
-            logger.info("Observ: Started.")
+            Log.debug("Waiter: Started.")
             self.bot.infinity_polling(
                 skip_pending=True, timeout=300, long_polling_timeout=300
             )
         except KeyboardInterrupt:
-            logger.info("Killed by KeyboardInterrupt")
+            Log.debug("Killed by KeyboardInterrupt")
         except Exception as e:
-            logger.error(f"Error: {e}")
-
-    def infinity_polling(self, **kwargs):
-        self.bot.infinity_polling(**kwargs)
+            Log.error(f"Error: {e}")
 
     def msg_in(self, chat_id, sender, text):
-        received(chat_id, sender.username, sender.first_name, text)
-        self.db.commit("insert_message", chat_id, sender.id, text)
-        self.history.insert_msg(chat_id, sender.id, text, sender, sender.first_name)
+        if not self.history.get_user(sender.id):
+            self.history.insert_user(sender.id, sender.username, sender.first_name)
+        Log.received(chat_id, sender.username, sender.first_name, text)
+        self.history.insert_msg(chat_id, sender.id, text)
 
     def msg_out(self, chat_id, receiver, text, msg_id=None):
         msg = (
@@ -251,19 +244,11 @@ class SafeBot:
             if not msg_id
             else self.safe.edit(text, chat_id, msg_id)
         )
-        sent(chat_id, *self.history.get_user(self.me.id), text)
-        self.db.commit("insert_message", chat_id, self.me.id, text)
-        self.history.insert_msg(chat_id, receiver.id, text)
+        Log.sent(chat_id, *self.myself, text)
+        self.history.insert_msg(chat_id, receiver.id, text, bot=True)
         return msg
 
     def notify(self, chat_id, receiver_id, text):
         self.safe.send(text, chat_id)
-        sent(chat_id, *self.history.get_user(self.me.id), text)
-        self.db.commit("insert_message", chat_id, self.me.id, text)
-        self.history.insert_msg(chat_id, receiver_id, text)
-
-
-bot = SafeBot()
-
-if __name__ == "__main__":
-    bot.start()
+        Log.sent(chat_id, *self.myself, text)
+        self.history.insert_msg(chat_id, receiver_id, text, bot=True)

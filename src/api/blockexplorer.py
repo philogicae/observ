@@ -1,6 +1,6 @@
 from os import getenv
+
 from dotenv import load_dotenv
-from json import loads
 from requests import get
 
 load_dotenv()

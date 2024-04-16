@@ -1,21 +1,24 @@
+from time import sleep
+
 from addict import Dict
 from web3 import Web3
+
+import bot
+from data.db import DB
+
 from .config import RPC
-import asyncio
-from datetime import datetime
-from rich import print
 
 
 class EventListener:
-    delay = 2
+    delay = 3
 
-    def __init__(self, db, handler):
+    def __init__(self):
         self.w3 = Web3(Web3.WebsocketProvider(RPC.arbitrum.events.wss))
-        self.db = db
-        self.handler = handler
+        self.db = DB()
+        self.handler = bot.Notifier().handler
 
     def get_filter(self, block_id, watched=None):
-        results = self.db.fetch("get_event_requests")
+        results = self.db.fetch("get_event_requests", 100)
         data = Dict(
             {
                 r[0]: Dict(
@@ -31,9 +34,11 @@ class EventListener:
             }
         )
         requests = [[r[0], r[4], r[5], r[6]] for r in results]
-        zipped = list(zip(*requests))
         new_watched = set(map(lambda x: x[0], requests))
-        if new_watched and new_watched != watched:
+        if new_watched != watched:
+            zipped = list(zip(*requests)) if requests else None
+            if not zipped:
+                return None, None, None, None, True
             request_ids, addrs, abis, evts = zipped
             contracts = [
                 self.w3.eth.contract(address=address, abi=abi)
@@ -53,60 +58,56 @@ class EventListener:
             block_filter = self.w3.eth.filter(
                 dict(address=list(set(addrs)), fromBlock=block_id)
             )
-            return new_watched, addr_mapping, block_filter, data
-        return None, None, None, None
+            return new_watched, addr_mapping, block_filter, data, True
+        return None, None, None, None, False
 
     def listen(self):
-        async def block_loop():
-            block_id = self.w3.eth.get_block_number()
-            watched, addr_mapping, block_filter, data = self.get_filter(block_id)
-            while True:
-                if watched:
-                    logs = block_filter.get_new_entries()
-                    to_check = []
-                    if len(logs) > 0:
-                        for log in logs:
-                            for request_id, event in addr_mapping[log.address]:
-                                try:
-                                    to_check.append(
-                                        [
-                                            request_id,
-                                            data[request_id],
-                                            event().process_log(log),
-                                        ]
-                                    )
-                                except:
-                                    pass
-                    if to_check:
-                        block_id = logs[-1].blockNumber
-                        self.handler(to_check)
-                    else:
-                        block_id = self.w3.eth.get_block_number()
-                        print(
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            + f" - At block {block_id}: No new log"
-                        )
+        block_id = self.w3.eth.get_block_number()
+        watched, addr_mapping, block_filter, data = None, None, None, None
+        while True:
+            if watched:
+                logs = block_filter.get_new_entries()
+                to_check = []
+                if len(logs) > 0:
+                    for log in logs:
+                        for request_id, event in addr_mapping[log.address]:
+                            try:
+                                to_check.append(
+                                    [
+                                        request_id,
+                                        data[request_id],
+                                        log["transactionHash"],
+                                        event().process_log(log),
+                                    ]
+                                )
+                            except:
+                                pass
+                if to_check:
+                    block_id = logs[-1].blockNumber
+                    self.handler(to_check)
                 else:
-                    print(
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        + f" - Nothing to watch"
-                    )
-                await asyncio.sleep(self.delay)
-                new_watched, new_addr_mapping, new_block_filter, new_data = (
-                    self.get_filter(block_id, watched)
+                    block_id = self.w3.eth.get_block_number()
+            sleep(self.delay)
+            new_watched, new_addr_mapping, new_block_filter, new_data, updated = (
+                self.get_filter(block_id, watched)
+            )
+            if updated:
+                watched, addr_mapping, block_filter, data = (
+                    new_watched,
+                    new_addr_mapping,
+                    new_block_filter,
+                    new_data,
                 )
-                if new_watched:
-                    watched, addr_mapping, block_filter, data = (
-                        new_watched,
-                        new_addr_mapping,
-                        new_block_filter,
-                        new_data,
-                    )
 
-        async def task():
-            await asyncio.gather(block_loop())
-
+    def start(self):
         try:
-            asyncio.run(task())
+            bot.Log.debug("Listener: Started.")
+            self.listen()
         except KeyboardInterrupt:
-            pass
+            bot.Log.debug("Killed by KeyboardInterrupt")
+        except Exception as e:
+            bot.Log.error(f"Error: {e}")
+
+
+def start_event_listener():
+    EventListener().start()

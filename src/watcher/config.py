@@ -1,6 +1,7 @@
 from os import getenv
-from dotenv import load_dotenv
+
 from addict import Dict
+from dotenv import load_dotenv
 
 load_dotenv()
 blastapi_key = getenv("BLASTAPI_API_KEY")

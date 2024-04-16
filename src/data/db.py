@@ -1,4 +1,5 @@
 import sqlite3
+
 from addict import Dict
 
 
@@ -7,17 +8,21 @@ class DB:
     DB = DATA + "base.db"
     SCRIPTS = DATA + "scripts/"
     READ = Dict(
-        get_messages="SELECT * FROM messages ORDER BY time DESC LIMIT 100",
-        get_requests="SELECT * FROM requests WHERE active = 1 ORDER BY time DESC LIMIT 100",
-        get_event_requests="SELECT * FROM requests WHERE active = 1 and watch_type = 'event' ORDER BY time DESC LIMIT 100",
-        get_call_requests="SELECT * FROM requests WHERE active = 1 and watch_type = 'call' ORDER BY time DESC LIMIT 100",
+        get_user="SELECT username, first_name FROM users WHERE user_id = ? LIMIT 1",
+        get_users="SELECT * FROM users ORDER BY time DESC LIMIT ?",
+        get_user_chat="SELECT * FROM messages WHERE chat_id = ? AND user_id = ? ORDER BY time DESC LIMIT ?",
+        get_chat="SELECT * FROM messages WHERE chat_id = ? ORDER BY time DESC LIMIT ?",
+        get_messages="SELECT * FROM messages ORDER BY time DESC LIMIT ?",
+        get_requests="SELECT * FROM requests WHERE active = 1 ORDER BY time DESC LIMIT ?",
+        get_event_requests="SELECT * FROM requests WHERE active = 1 AND watch_type = 'event' ORDER BY time DESC LIMIT ?",
+        get_call_requests="SELECT * FROM requests WHERE active = 1 AND watch_type = 'call' ORDER BY time DESC LIMIT ?",
     )
     WRITE = Dict(
-        insert_message="INSERT INTO messages (chat_id, user_id, content, time) VALUES (?, ?, ?, datetime('now'))",
-        update_message="UPDATE messages SET content = ?, time = datetime('now') WHERE id = ?",
+        insert_user="INSERT INTO users (user_id, username, first_name, time) VALUES (?, ?, ?, datetime('now'))",
+        insert_message="INSERT INTO messages (chat_id, user_id, content, agent, time) VALUES (?, ?, ?, ?, datetime('now'))",
         insert_request="INSERT INTO requests (chat_id, user_id, watch_type, addr, abi, method, args, condition, decimals, intention, active, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))",
-        disable_request="UPDATE requests SET active = 0 WHERE id = ?",
         enable_request="UPDATE requests SET active = 1 WHERE id = ?",
+        disable_request="UPDATE requests SET active = 0 WHERE id = ?",
     )
 
     def reset(self):
@@ -33,10 +38,10 @@ class DB:
                     c.executescript(script)
                 db.commit()
 
-    def fetch(self, query):
+    def fetch(self, query, *values):
         with sqlite3.connect(self.DB) as db:
             c = db.cursor()
-            c.execute(self.READ.get(query))
+            c.execute(self.READ.get(query), values)
             return c.fetchall()
 
     def commit(self, query, *values):

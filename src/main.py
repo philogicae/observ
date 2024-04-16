@@ -1,21 +1,18 @@
 import sys
-from datetime import datetime
-from bot.notifier import Notifier
-from data import DB
+from threading import Thread
+
 from bot import SafeBot
-from llm import LLM, PROMPTS
-from watcher import EventListener
+from data import DB
+from watcher import EventListener, start_event_listener
 
 if __name__ == "__main__":
-    bot = SafeBot()
-    llm = LLM()
-    notifier = Notifier(bot, llm, PROMPTS.condition)
-    db = DB()
-    args = sys.argv
-    if args[1] == "bot":
-        bot.start()
-    elif args[1] == "events":
-        event_listener = EventListener(db, notifier.handler)
-        event_listener.listen()
-    elif args[1] == "reset":
+    if len(sys.argv) == 1:
+        Thread(target=start_event_listener, daemon=True).start()
+        SafeBot().start()
+    elif sys.argv[1] == "bot":
+        SafeBot().start()
+    elif sys.argv[1] == "events":
+        EventListener().start()
+    elif sys.argv[1] == "reset":
+        db = DB()
         db.reset()

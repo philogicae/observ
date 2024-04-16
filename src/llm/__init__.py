@@ -1,2 +1,2 @@
 from .llm import LLM
-from .prompts import PROMPTS
+from .prompts import Prompts
