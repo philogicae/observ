@@ -26,6 +26,7 @@ missing = "⌛ Please provide a contract address by sending:\n#address 0x..."
 added = lambda x: f"✅ Successfully added Alert-{x} ✅"
 on = lambda x: f"🟢 Alert-{x}: on 🟢"
 off = lambda x: f"🔴 Alert-{x}: off 🔴"
+wrong = "Wrong command"
 
 
 class SafeRequest:
@@ -156,50 +157,49 @@ class SafeBot:
             self.db.commit("delete_all_user_requests", chat_id, sender.id)
             self.msg_out(chat_id, sender, reset)
 
-        @self.bot.message_handler(content_types=["text"])
+        @self.bot.message_handler(
+            func=lambda m: m.text.startswith("#"), content_types=["text"]
+        )
         def handle_message(message: types.Message):
             chat_id, sender, text = self.context(message)
             self.msg_in(chat_id, sender, text)
             msg = self.msg_out(chat_id, sender, waiting)
-            if not text.startswith("#"):
-                resp = self.llm.call(Prompts.default, text)
+            user, name = self.myself
+            if text.startswith("#tellmewhen ") and len(text) > 12:
+                parsed = self.llm.call_for_json(Prompts.analyse, text)
+                if parsed.address:
+                    try:
+                        parsed.address = Web3.to_checksum_address(parsed.address)
+                    except Exception as e:
+                        Log.info(chat_id, user, name, str(e))
+                        parsed.address = None
+                if not parsed.address:
+                    Log.info(chat_id, user, name, "Missing or invalid contract address")
+                    resp = missing
+                else:
+                    Log.info(chat_id, user, name, str(parsed))
+                    resp = checking
+                    self.history.buffer[f"{chat_id}_{sender.id}"] = parsed
+            elif (
+                text.startswith("#address ")
+                and len(text) > 9
+                and self.history.buffer[f"{chat_id}_{sender.id}"]
+            ):
+                self.history.buffer[f"{chat_id}_{sender.id}"].address = (
+                    Web3.to_checksum_address(text[9:])
+                )
+                Log.info(chat_id, user, name, "Added contract address")
+                resp = "Thank you! " + checking
+            elif text.startswith("#on ") and len(text) > 4:
+                alert = int(text[4:])
+                self.db.commit("enable_request", alert)
+                resp = on(alert)
+            elif text.startswith("#off ") and len(text) > 5:
+                alert = int(text[5:])
+                self.db.commit("disable_request", alert)
+                resp = off(alert)
             else:
-                user, name = self.myself
-                if text.startswith("#tellmewhen ") and len(text) > 12:
-                    parsed = self.llm.call_for_json(Prompts.analyse, text)
-                    if parsed.address:
-                        try:
-                            parsed.address = Web3.to_checksum_address(parsed.address)
-                        except Exception as e:
-                            Log.info(chat_id, user, name, str(e))
-                            parsed.address = None
-                    if not parsed.address:
-                        Log.info(
-                            chat_id, user, name, "Missing or invalid contract address"
-                        )
-                        resp = missing
-                    else:
-                        Log.info(chat_id, user, name, str(parsed))
-                        resp = checking
-                        self.history.buffer[f"{chat_id}_{sender.id}"] = parsed
-                elif (
-                    text.startswith("#address ")
-                    and len(text) > 9
-                    and self.history.buffer[f"{chat_id}_{sender.id}"]
-                ):
-                    self.history.buffer[f"{chat_id}_{sender.id}"].address = (
-                        Web3.to_checksum_address(text[9:])
-                    )
-                    Log.info(chat_id, user, name, "Added contract address")
-                    resp = "Thank you! " + checking
-                elif text.startswith("#on ") and len(text) > 4:
-                    alert = int(text[4:])
-                    self.db.commit("enable_request", alert)
-                    resp = on(alert)
-                elif text.startswith("#off ") and len(text) > 5:
-                    alert = int(text[5:])
-                    self.db.commit("disable_request", alert)
-                    resp = off(alert)
+                resp = wrong
             self.msg_out(chat_id, sender, resp, msg.id)
             if resp == checking:
                 buffer = self.history.buffer[f"{chat_id}_{sender.id}"]
